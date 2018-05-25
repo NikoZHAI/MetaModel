@@ -6,11 +6,14 @@ Created on Wed May 16 10:16:30 2018
 @author: niko
 
 """
+import sys
+sys.path.append('..')
+
 import numpy as np
 import pandas as pd
 from multilayer_perceptron import MLPSurrogate
-from multioutput import MultiOutputRegressor
-from neuro_surrogate import Population, gaussian_mutator, zdt1,\
+# from multioutput import MultiOutputRegressor
+from neuro_surrogate import Population, gaussian_mutator, zdt4,\
                             random_crossover, Individual
 import matplotlib.pyplot as plt
 from matplotlib import rc
@@ -23,10 +26,14 @@ rc('font', **{'family': 'sans-serif', 'sans-serif': ['Helvetica']})
 rc('text', usetex=True)
 
 
+PM_FUN = zdt4
 DIMENSION = 30
-POP_SIZE = 128
+POP_SIZE = 64
 MAX_GENERATION = 25
-PM_FUN = zdt1
+MAX_EPISODE = 30
+MUTATION_RATE = 0.08
+MUTATION_U = 0.
+MUTATION_ST = 0.2
 
 
 pop = Population(dim=DIMENSION, size=POP_SIZE, fitness_fun=PM_FUN,
@@ -35,11 +42,11 @@ pop.selection_fun = pop.compute_front
 pop.mutation_fun = gaussian_mutator
 pop.regions.append([0., 1.])
 pop.crossover_fun = random_crossover
-pop.mutaton_rate = 0.06
+pop.mutaton_rate = MUTATION_RATE
 
 # Parametrization
 region = 0
-params_ea = {'u': 0., 'st': 0.2}
+params_ea = {'u': MUTATION_U, 'st': MUTATION_ST}
 params_surrogate = \
     {'hidden_layer_sizes': (6, 8),
      'activation': 'tanh',
@@ -76,7 +83,7 @@ pop.crossover_in_true_front(region=region, **params_ea)
 
 # ===============================Meta Modelling================================
 
-for i in range(1, 15):
+for i in range(1, MAX_EPISODE):
     # Evolutional computation on the surrogate
     while pop.generation <= pop.max_generation:
         pop.select(region=region, **params_ea)
@@ -109,19 +116,19 @@ for f in final_arc:
 
 
 def load_theo():
-    return pd.read_csv(filepath_or_buffer='./ZDT/ZDT1.pf', names=['f1', 'f2'],
+    return pd.read_csv(filepath_or_buffer='./ZDT/ZDT4.pf', names=['f1', 'f2'],
                        delim_whitespace=True)
 
 theo = load_theo()
 fig, ax = plt.subplots(figsize=(8,6), dpi=100)
 ax.scatter(theo.f1, theo.f2, c='orangered', s=1.2,
            label="Analytical (F. Kursawe 1991)")
-ax.scatter(x, y, c='royalblue', s=1.6, label="Surrogate NSGA-II")
+ax.scatter(x, y, c='royalblue', s=1.6, label="Surrogate ZDT-3")
 ax.set_xlabel(r'$\displaystyle f_1=\sum_{i=1}^2'
               r'\left[-10exp\left(-0.2\sqrt{(x_i^2+x_{i+1}^2)}\right)\right]$')
 ax.set_ylabel(r'$\displaystyle f_2=\sum_{i=1}^3'
               r'\left[|x_i|^{0.8}+5sin(x_i^3)\right]$')
-ax.set(title="Kursawe")
+ax.set(title="ZDT-3")
 
 # Plot legend.
 lgnd = ax.legend(numpoints=1)
@@ -131,7 +138,7 @@ lgnd.legendHandles[0]._sizes = [10]
 lgnd.legendHandles[1]._sizes = [10]
 plt.grid()
 plt.show()
-fig.savefig('zdt_logistic.png', format='png')
+fig.savefig('zdt4_tanh.png', format='png')
 
 
 for i in range(50):

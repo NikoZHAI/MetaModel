@@ -8,6 +8,7 @@ Created on Wed May  9 11:22:07 2018
 
 import numpy as np
 import copy as cp
+from operator import methodcaller
 
 
 def kursawe(x):
@@ -54,6 +55,15 @@ def zdt4(x):
     return np.array([f1, f2])
 
 
+def zdt6(x):
+    f1 = 1. - np.exp(-4. * x[0]) * np.power(np.sin(6.* np.pi * x[0]), 6)
+    g = np.add(1.0, np.multiply(9.,
+                                np.power(np.divide(x[1:].sum(), 9.), 0.25)))
+    f2 = np.multiply(g, (1. - np.square(np.divide(f1, g))))
+
+    return np.array([f1, f2])
+
+
 def _rend_k_elites(pop, elites, **kwargs):
     for i in pop:
         inter = Individual(fitness=np.array([np.inf]*2))
@@ -78,6 +88,26 @@ def random_crossover(elites, gene_len, **kwargs):
     return np.array(child)
 
 
+def reject_acceptance(elites, gene_len, **kwargs):
+    p = np.random.uniform()
+    picked = np.random.choice(elites)
+    rejected = []
+    while (picked.acceptance != 1.) and (p >= 0):
+        if picked in rejected:
+            picked = np.random.choice(elites)
+            continue
+        else:
+            p -= picked.acceptance
+            picked = np.random.choice(elites)
+    return picked
+
+
+def nsga_crossover(elites, gene_len, **kwargs):
+    child = [reject_acceptance(elites, gene_len, **kwargs).gene[i] \
+             for i in range(gene_len)]
+    return np.array(child)
+
+
 def gaussian_mutator(gene, bounds, doomed, u=0., st=0.2,
                      multi_bounds=False, **kwargs):
 
@@ -97,6 +127,11 @@ def gaussian_mutator(gene, bounds, doomed, u=0., st=0.2,
     return gene
 
 
+def sort_crowding(tosort, obj):
+    tosort.sort(key=methodcaller('get_fitness', obj=obj))
+    return None
+
+
 class Individual(object):
 
     def __init__(self, dim=3, bounds=[-5., 5.], name='Undefined',
@@ -109,6 +144,7 @@ class Individual(object):
         self.fitness = fitness
         self.cached = False
         self.multi_bounds = True
+        self.acceptance = 0.
 
         if self.bounds.shape.__len__() == 1:
             self.gene = np.random.uniform(*self.bounds, dim)
@@ -133,6 +169,13 @@ class Individual(object):
             self.gene = routine(self.gene, self.bounds, doomed,
                                 multi_bounds=self.multi_bounds, **kwargs)
         return self.gene
+
+    def get_fitness(self, obj):
+        return self.fitness.__getitem__(obj)
+
+    def update_dist(self, right, left, obj):
+        self._dist += right.get_fitness(obj) - left.get_fitness(obj)
+        return self._dist
 
     def __lt__(self, other):
         _better = self.fitness.__lt__(other.fitness)
@@ -256,6 +299,7 @@ class Population(object):
         updates = []
         if self.generation == 0:
             self.front[region] = self.elites[region].copy()
+            self.calc_nsga_acceptance(pop=self.true_front[region])
             return None
         else:
             current_front = self.front[region]
@@ -274,6 +318,7 @@ class Population(object):
                     i_pop += 1
 
         self.front[region].extend(updates)
+        self.calc_nsga_acceptance(pop=self.front[region])
         return None
 
     def compute_front(self, region=0, on=None, **kwargs):
@@ -320,6 +365,7 @@ class Population(object):
         updates = []
         if self.generation == 0:
             self.true_front[region] = self.front[region].copy()
+            self.calc_nsga_acceptance(pop=self.true_front[region])
             return None
         else:
             current_front = self.true_front[region]
@@ -338,6 +384,7 @@ class Population(object):
                     i_pop += 1
 
         self.true_front[region].extend(updates)
+        self.calc_nsga_acceptance(pop=self.true_front[region])
         return None
 
     def crossover_in_true_front(self, region=0, **kwargs):
@@ -348,4 +395,33 @@ class Population(object):
             i.calc_fitness(fun=self.fitness_fun)
             #self.cache(i)
         return None
+
+    def calc_nsga_acceptance(self, pop, **kwargs):
+        """
+            Pop should be assigned by a pop_list[region] fashion.
+        """
+        if pop.__len__() < 5:
+            [i.__setattr__('acceptance', 1.) for i in pop]
+            return None
+
+        for i in pop:
+            i._dist = 0.
+            i._on_edge = False
+
+        total_dist = 0.
+        for j in range(pop[0].fitness.shape[0]):
+            sort_crowding(tosort=pop, obj=j)
+            pop[0]._on_edge = True
+            pop[-1]._on_edge = True
+            total_dist += np.sum([pop[i].update_dist(pop[i+1], pop[i-1], j) \
+                                  for i in range(1, pop.__len__()-1)])
+
+        for i in pop:
+            if i._on_edge:
+                i.acceptance = 1.
+            else:
+                i.acceptance = np.divide(i._dist, total_dist)
+
+        return None
+
 
